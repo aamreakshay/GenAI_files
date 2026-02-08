@@ -1,0 +1,81 @@
+CREATE PROCEDURE dbo.ProcessDepartmentStoreSale
+    @CustomerID INT,
+    @ProductID INT,
+    @Quantity INT,
+    @StoreID INT,
+    @SalesPersonID INT,
+    @TransactionStatus NVARCHAR(50) OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    DECLARE @UnitPrice DECIMAL(18, 2);
+    DECLARE @CurrentStock INT;
+    DECLARE @TotalSaleAmount DECIMAL(18, 2);
+    DECLARE @LoyaltyPointsEarned INT;
+    DECLARE @SaleID INT;
+
+    BEGIN TRY
+        -- 1. Validate Product and check inventory
+        SELECT @UnitPrice = Price, @CurrentStock = StockQuantity 
+        FROM Inventory 
+        WHERE ProductID = @ProductID AND StoreID = @StoreID;
+
+        IF @UnitPrice IS NULL
+        BEGIN
+            SET @TransactionStatus = 'Error: Product not found in this store.';
+            RETURN;
+        END
+
+        IF @CurrentStock < @Quantity
+        BEGIN
+            SET @TransactionStatus = 'Error: Insufficient stock.';
+            RETURN;
+        END
+
+        -- 2. Start Transaction for atomicity
+        BEGIN TRANSACTION;
+
+        -- 3. Calculate financial totals
+        SET @TotalSaleAmount = @UnitPrice * @Quantity;
+        SET @LoyaltyPointsEarned = FLOOR(@TotalSaleAmount / 10); -- 1 point per $10 spent
+
+        -- 4. Deduct Inventory
+        UPDATE Inventory 
+        SET StockQuantity = StockQuantity - @Quantity,
+            LastUpdated = GETDATE()
+        WHERE ProductID = @ProductID AND StoreID = @StoreID;
+
+        -- 5. Log the Sale
+        INSERT INTO Sales (CustomerID, ProductID, StoreID, SalesPersonID, Quantity, TotalAmount, SaleDate)
+        VALUES (@CustomerID, @ProductID, @StoreID, @SalesPersonID, @Quantity, @TotalSaleAmount, GETDATE());
+
+        SET @SaleID = SCOPE_IDENTITY();
+
+        -- 6. Update Customer Loyalty Points
+        UPDATE Customers
+        SET LoyaltyPoints = LoyaltyPoints + @LoyaltyPointsEarned
+        WHERE CustomerID = @CustomerID;
+
+        -- 7. Log Transaction for Auditing
+        INSERT INTO TransactionAuditLogs (SaleID, ActionType, LogDate)
+        VALUES (@SaleID, 'SALE_COMPLETED', GETDATE());
+
+        -- Commit all changes
+        COMMIT TRANSACTION;
+
+        SET @TransactionStatus = 'Success: Sale processed.';
+        
+    END TRY
+    BEGIN CATCH
+        -- Rollback if any error occurs
+        IF @@TRANCOUNT > 0
+            ROLLBACK TRANSACTION;
+
+        SET @TransactionStatus = 'Error: ' + ERROR_MESSAGE();
+        
+        -- Log internal error
+        INSERT INTO ErrorLogs (ErrorNumber, ErrorMessage, ErrorProcedure, ErrorDate)
+        VALUES (ERROR_NUMBER(), ERROR_MESSAGE(), 'ProcessDepartmentStoreSale', GETDATE());
+    END CATCH
+END;
