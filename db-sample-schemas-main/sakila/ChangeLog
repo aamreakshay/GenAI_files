@@ -1,0 +1,17 @@
+1.2.1 2022-06-04
+    - fix column address.location (postgres/sqlite3 string, mysql geometry)
+1.2.0 2022-06-03
+	- port routines from get_customer_balance for mysql/Postgres
+1.1.0 2022-05-29
+    - port all the views from sakila-schema.sql
+1.0.0 2022-05-23
+	- Based on Sample https://dev.mysql.com/doc/sakila/en/
+	- Original Source code: https://downloads.mysql.com/docs/sakila-db.zip
+	- Initial release
+	- Reprogram
+	- Tables, Data
+	- No Views, Functions, Stored Procedures yet
+	- Tested on Postgres 14.2, sqlite3.37, mysql8.0.28
+
+
+
